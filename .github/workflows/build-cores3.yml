@@ -14,7 +14,7 @@ jobs:
           python-version: '3.11'
       - name: Install build tools
         run: python -m pip install --upgrade platformio esptool
-      - name: Inject Wi-Fi password from GitHub Actions Secret
+      - name: Inject optional Wi-Fi password from GitHub Actions Secret
         env:
           STACKCHAN_WIFI_PASSWORD: ${{ secrets.STACKCHAN_WIFI_PASSWORD }}
         run: |
@@ -23,13 +23,24 @@ jobs:
           from pathlib import Path
           password = os.environ.get("STACKCHAN_WIFI_PASSWORD", "")
           if not password:
-              raise SystemExit("Set repository Actions secret STACKCHAN_WIFI_PASSWORD before building")
+              print("::warning::STACKCHAN_WIFI_PASSWORD is not set. Building without Wi-Fi credentials; configure the secret to enable Wi-Fi on device.")
           Path("src/wifi_secrets.h").write_text(
               "#pragma once\n#define WIFI_PASSWORD " + json.dumps(password) + "\n"
           )
           PY
       - name: Build merged firmware
-        run: bash build.sh
+        run: |
+          set -o pipefail
+          bash build.sh 2>&1 | tee firmware-build.log
+      - name: Show compiler errors on failure
+        if: failure()
+        run: |
+          if [ -f firmware-build.log ]; then
+            echo "=== Relevant compiler diagnostics ==="
+            grep -nE "fatal error:|error:|FAILED|Error:|undefined reference|Traceback" firmware-build.log | tail -80 || true
+            echo "=== Last 80 build lines ==="
+            tail -80 firmware-build.log
+          fi
       - name: Validate merged firmware header
         run: |
           python -m esptool --chip esp32s3 image_info firmware-merged.bin
