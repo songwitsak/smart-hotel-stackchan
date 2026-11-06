@@ -99,7 +99,7 @@ void drawFace() {
   if (awake) {
     d.fillRoundRect(cx-gap-24, eyeY-18, 48, 36, 16, cyan);
     d.fillRoundRect(cx+gap-24, eyeY-18, 48, 36, 16, cyan);
-    d.drawArc(cx, cy+34, 37, 29, 20, 160, cyan, bg);
+    d.drawArc(cx, cy+34, 37, 29, 20, 160, cyan);
   } else {
     d.fillRoundRect(cx-gap-24, eyeY-4, 48, 8, 4, cyan);
     d.fillRoundRect(cx+gap-24, eyeY-4, 48, 8, 4, cyan);
