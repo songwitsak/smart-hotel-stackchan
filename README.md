@@ -20,3 +20,11 @@ If successful, download `firmware-merged.bin` and flash **at 0x0** using a CoreS
 - After 5 seconds: sleep and center head
 
 **Status:** Source updated, not yet cloud-compiled or hardware-tested. Servo movement requires wiring verification and an enabled PWM pin.
+
+## Phase 2: Local microphone / speaker test (new)
+
+Tap the **bottom status bar** on the CoreS3 display. The device records approximately one second of microphone audio and plays it through its built-in speaker. The screen shows RECORDING / PLAYING / DONE (or an error). Other touch areas still wake the face; IMU and optional servo remain intact.
+
+This is a **local loopback test only**: no Wi-Fi, STT, TTS, WebSocket, Sumanee, hotel booking, light control or payment yet. The mic and speaker run sequentially to avoid simultaneous audio conflicts.
+
+Rebuild with GitHub Actions or `bash build.sh`, then flash the updated merged image. Build and physical audio functionality are not yet verified.
