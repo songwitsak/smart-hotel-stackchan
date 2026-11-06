@@ -265,7 +265,7 @@ bool playSumaneeWav(HTTPClient& http) {
             rate>=8000 && rate<=48000) {
           audioStatus = "SPEAKING...";
           drawFace();
-          M5.Speaker.setVolume(90);
+          M5.Speaker.setVolume(180);
           if (M5.Speaker.begin()) {
             M5.Speaker.playRaw((const int16_t*)(reply+dataPos), dataLen/2, rate, false, 1, 0);
             uint32_t end = millis()+30000;
