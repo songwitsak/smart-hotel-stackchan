@@ -521,7 +521,7 @@ void setup() {
   auto cfg = M5.config();
   M5.begin(cfg);
   Serial.begin(115200);
-  M5.Display.setRotation(3);  // Landscape rotated 180 degrees to match StackChan mounting
+  M5.Display.setRotation(0);  // Correct 90-degree sideways display seen on mounted CoreS3
   M5.Imu.begin();
   // Short startup chime; plays locally without Wi-Fi or cloud TTS.
   M5.Speaker.setVolume(65);
