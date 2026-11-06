@@ -165,7 +165,7 @@ void testAudioLoopback() {
     audioStatus = "MIC TIMEOUT";
   } else {
     audioStatus = "PLAYING...";
-    M5.Speaker.setVolume(100);
+    M5.Speaker.setVolume(255);
     if (M5.Speaker.begin()) {
       M5.Speaker.playRaw(audioBuffer, AUDIO_SAMPLES, AUDIO_RATE, false, 1, 0);
       uint32_t playDeadline = millis() + 4000;
@@ -265,7 +265,7 @@ bool playSumaneeWav(HTTPClient& http) {
             rate>=8000 && rate<=48000) {
           audioStatus = "SPEAKING...";
           drawFace();
-          M5.Speaker.setVolume(180);
+          M5.Speaker.setVolume(255);
           if (M5.Speaker.begin()) {
             M5.Speaker.playRaw((const int16_t*)(reply+dataPos), dataLen/2, rate, false, 1, 0);
             uint32_t end = millis()+30000;
@@ -524,7 +524,7 @@ void setup() {
   M5.Display.setRotation(0);  // Correct 90-degree sideways display seen on mounted CoreS3
   M5.Imu.begin();
   // Short startup chime; plays locally without Wi-Fi or cloud TTS.
-  M5.Speaker.setVolume(65);
+  M5.Speaker.setVolume(255);
   if (M5.Speaker.begin()) {
     M5.Speaker.tone(880, 110);
     delay(145);
