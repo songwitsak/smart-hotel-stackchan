@@ -428,39 +428,33 @@ void drawFace() {
   const uint32_t muted = d.color565(130, 153, 170);
   const uint32_t footer = d.color565(24, 66, 78);
 
-  // Landscape 320x240: top header 24px, centered character, bottom status 64px.
-  d.startWrite();
-  d.fillScreen(bg);
-  d.setTextDatum(top_center);
-  d.setTextSize(1);
-  d.setTextColor(muted, bg);
-  d.drawString(wifiConnected ? "SUMANEE  /  WIFI ONLINE" :
-               (gatewayStatus == "WIFI PASSWORD MISSING" ?
-                "WIFI PASSWORD MISSING" : "SUMANEE  /  WIFI OFFLINE"), cx, 5, 2);
-
+  // Landscape full-screen portrait: scale to COVER the 320x240 display.
+  // Center-crop the square source rather than stretching the face.
 #if HAS_SUMANEE_PORTRAIT
-  // Keep the entire 120x120 portrait visible in the landscape content area.
-  const int scale = 1;
-  const int imageX = (w - PORTRAIT_W * scale) / 2;
-  const int imageY = 31 + (138 - PORTRAIT_H * scale) / 2;
-  for (int py = 0; py < PORTRAIT_H; ++py) {
-    for (int px = 0; px < PORTRAIT_W; ++px) {
-      const int idx = py * PORTRAIT_W + px;
+  const int srcCropW = (PORTRAIT_H > 0) ? (PORTRAIT_H * w / h) : PORTRAIT_W;
+  const int cropW = (srcCropW < PORTRAIT_W) ? srcCropW : PORTRAIT_W;
+  const int cropH = (PORTRAIT_W * h / w < PORTRAIT_H)
+                  ? (PORTRAIT_W * h / w) : PORTRAIT_H;
+  const int cropX = (PORTRAIT_W - cropW) / 2;
+  const int cropY = (PORTRAIT_H - cropH) / 2;
+  for (int y = 0; y < h; ++y) {
+    const int sy = cropY + y * cropH / h;
+    for (int x = 0; x < w; ++x) {
+      const int sx = cropX + x * cropW / w;
+      const int idx = sy * PORTRAIT_W + sx;
       const uint8_t packed = PORTRAIT_PIXELS[idx / 2];
       const uint8_t colorIdx = (idx & 1) ? (packed & 15) : (packed >> 4);
-      d.fillRect(imageX + px * scale, imageY + py * scale,
-                 scale, scale, PORTRAIT_PALETTE[colorIdx]);
+      d.drawPixel(x, y, PORTRAIT_PALETTE[colorIdx]);
     }
   }
   if (mouthSpeaking) {
-    // Overlay position relative to portrait, not the full screen.
-    const int mx = imageX + (PORTRAIT_W * scale) / 2;
-    const int my = imageY + (PORTRAIT_H * scale * 3) / 4;
+    const int mx = (PORTRAIT_W / 2 - cropX) * w / cropW;
+    const int my = (PORTRAIT_H * 3 / 4 - cropY) * h / cropH;
     const uint16_t dark = d.color565(10, 32, 59);
     const uint16_t lip = d.color565(109, 193, 222);
-    if (mouthLevel == 0) d.drawFastHLine(mx - 9, my, 18, lip);
-    else if (mouthLevel == 1) d.fillRoundRect(mx - 9, my - 2, 18, 7, 3, dark);
-    else d.fillRoundRect(mx - 10, my - 4, 20, 12, 5, dark);
+    if (mouthLevel == 0) d.drawFastHLine(mx - 19, my, 38, lip);
+    else if (mouthLevel == 1) d.fillRoundRect(mx - 19, my - 4, 38, 14, 6, dark);
+    else d.fillRoundRect(mx - 21, my - 8, 42, 25, 10, dark);
   }
 #else
   const int eyeY = 91;
@@ -482,7 +476,13 @@ void drawFace() {
   }
 #endif
 
-  // Bottom panel: text and interaction feedback remain clear of the portrait.
+#if HAS_SUMANEE_PORTRAIT
+  // Small status overlay: keep the character image edge-to-edge.
+  d.fillRect(0, h - 20, w, 20, bg);
+  d.setTextDatum(top_center);
+  d.setTextColor(white, bg);
+  d.drawString(audioStatus, cx, h - 18, 1);
+#else
   d.fillRoundRect(6, h - 65, w - 12, 61, 8, footer);
   d.setTextColor(white, footer);
   d.drawString(awake ? "AWAKE" : "IDLE", cx, h - 62, 2);
@@ -491,6 +491,7 @@ void drawFace() {
                "SERVO DISABLED - CHECK WIRING", cx, h - 43, 1);
   d.setTextColor(white, footer);
   d.drawString(audioStatus, cx, h - 24, 1);
+#endif
   d.endWrite();
 }
 
