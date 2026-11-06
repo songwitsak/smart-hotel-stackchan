@@ -8,10 +8,12 @@
 #define WIFI_PASSWORD ""
 #endif
 
-// Existing n8n workflow: Sumanee · Voice Stream.
-// Accepts JSON: {"chatInput":"...","sessionId":"cores3-..."}.
-// It does not accept raw audio; microphone STT requires a separate bridge.
+// Existing text-only Sumanee Voice Stream (web client).
 #define SUMANEE_VOICE_URL "https://sumaneeplatform.witmorning.com/webhook/sumanee-voice-stream-b8f24a91"
+
+// Direct WAV webhook in the SAME n8n workflow.
+// Currently responds with JSON text; WAV speech response is not enabled yet.
+#define SUMANEE_CORES3_WAV_URL "https://sumaneeplatform.witmorning.com/webhook/sumanee-cores3-wav"
 
 // Paste the PEM of the CA (or validated public trust chain) for HTTPS
 // requests. Never disable TLS verification in production.
@@ -19,7 +21,7 @@
 #define VOICE_GATEWAY_CA_CERT ""
 #endif
 
-// Separate CoreS3 audio bridge; deploy voice-gateway/ before enabling.
+// Optional legacy audio bridge. Leave empty to send WAV directly to n8n.
 // Set a HTTPS domain with a valid TLS certificate.
 #ifndef STACKCHAN_VOICE_BRIDGE_URL
 #define STACKCHAN_VOICE_BRIDGE_URL ""
