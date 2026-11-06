@@ -5,6 +5,12 @@
 #include <WiFiClientSecure.h>
 #include <HTTPClient.h>
 #include "config.h"
+#if __has_include("portrait_asset.h")
+#include "portrait_asset.h"
+#define HAS_SUMANEE_PORTRAIT 1
+#else
+#define HAS_SUMANEE_PORTRAIT 0
+#endif
 #include <esp_heap_caps.h>
 
 // M5Stack CoreS3 / StackChan Phase 1: face + IMU + optional head servo.
@@ -324,11 +330,40 @@ void drawFace() {
   const uint32_t muted = d.color565(130, 153, 170);
 
   d.fillScreen(bg);
+#if HAS_SUMANEE_PORTRAIT
+  // Center portrait at native pixel scale (120x120), enlarged 2x to 240x240.
+  // Crop vertically to leave a status bar while preserving image proportions.
+  const int scale = 2;
+  const int imageX = (w - PORTRAIT_W * scale) / 2;
+  const int imageY = -14;
+  for (int py = 0; py < PORTRAIT_H; ++py) {
+    for (int px = 0; px < PORTRAIT_W; ++px) {
+      const int idx = py * PORTRAIT_W + px;
+      const uint8_t packed = PORTRAIT_PIXELS[idx / 2];
+      const uint8_t colorIdx = (idx & 1) ? (packed & 15) : (packed >> 4);
+      const int sy = imageY + py * scale;
+      if (sy >= 0 && sy + scale <= h) {
+        d.fillRect(imageX + px * scale, sy, scale, scale, PORTRAIT_PALETTE[colorIdx]);
+      }
+    }
+  }
+  if (mouthSpeaking) {
+    const int mx = cx, my = 130;
+    const uint16_t dark = d.color565(10, 32, 59);
+    const uint16_t lip = d.color565(109, 193, 222);
+    if (mouthLevel == 0) d.drawFastHLine(mx - 17, my, 34, lip);
+    else if (mouthLevel == 1) d.fillRoundRect(mx - 15, my - 3, 30, 10, 5, dark);
+    else d.fillRoundRect(mx - 17, my - 6, 34, 20, 9, dark);
+  }
+#else
+  // Fallback geometric face until portrait_asset.h is committed.
+#endif
   d.setTextDatum(top_center);
   d.setTextColor(muted, bg);
   d.setTextSize(1);
   d.drawString(wifiConnected ? "SUMANEE / WIFI ONLINE" : (gatewayStatus == "WIFI PASSWORD MISSING" ? "WIFI PASSWORD MISSING" : "SUMANEE / WIFI OFFLINE"), cx, 10, 2);
 
+  #if !HAS_SUMANEE_PORTRAIT
   const int eyeY = cy - 20;
   const int gap = w / 6;
   if (awake) {
@@ -347,6 +382,7 @@ void drawFace() {
     d.drawFastHLine(cx-24, cy+35, 48, cyan);
   }
 
+  #endif
   d.setTextColor(white, bg);
   d.drawString(awake ? "AWAKE" : "IDLE", cx, h-47, 2);
   d.setTextColor(muted, bg);
