@@ -194,22 +194,49 @@ static uint32_t getLE32(const uint8_t* p) {
          (uint32_t(p[2])<<16) | (uint32_t(p[3])<<24);
 }
 // Play mono PCM16 WAV received from n8n (voice replies and welcome message).
+class PsramWavSink : public Stream {
+public:
+  uint8_t* data;
+  size_t capacity;
+  size_t length = 0;
+  explicit PsramWavSink(size_t cap) : capacity(cap) {
+    data = (uint8_t*)heap_caps_malloc(cap, MALLOC_CAP_SPIRAM | MALLOC_CAP_8BIT);
+  }
+  ~PsramWavSink() override { if (data) heap_caps_free(data); }
+  size_t write(uint8_t b) override { return write(&b, 1); }
+  size_t write(const uint8_t* src, size_t n) override {
+    if (!data || n > capacity - length) return 0;
+    memcpy(data + length, src, n);
+    length += n;
+    return n;
+  }
+  int available() override { return 0; }
+  int read() override { return -1; }
+  int peek() override { return -1; }
+  void flush() override {}
+};
+
 bool playSumaneeWav(HTTPClient& http) {
-  int len = http.getSize();
-  if (len > 44 && len <= 1500000) {
-    uint8_t* reply = (uint8_t*)heap_caps_malloc(len, MALLOC_CAP_SPIRAM | MALLOC_CAP_8BIT);
-    if (reply) {
-      WiFiClient* stream = http.getStreamPtr();
-      int read = 0;
-      uint32_t deadline = millis() + 45000;
-      while (read < len && millis() < deadline) {
-        int avail = stream->available();
-        if (avail > 0) {
-          int n = stream->readBytes(reply + read, min(avail, len-read));
-          if (n > 0) read += n;
-        } else delay(2);
-      }
-      if (read == len && memcmp(reply, "RIFF", 4)==0 &&
+  // HTTP may use Transfer-Encoding: chunked; getSize() is then -1.
+  // writeToStream decodes chunked transfer framing before WAV parsing.
+  const int reportedLen = http.getSize();
+  Serial.printf("WAV response content-length=%d\\n", reportedLen);
+  if (reportedLen > 1500000 || (reportedLen >= 0 && reportedLen <= 44)) {
+    audioStatus = "BAD REPLY SIZE";
+    return false;
+  }
+  PsramWavSink sink(reportedLen > 0 ? (size_t)reportedLen : 1500000);
+  if (!sink.data) { audioStatus = "NO PSRAM FOR REPLY"; return false; }
+  const int transferred = http.writeToStream(&sink);
+  const size_t len = sink.length;
+  Serial.printf("WAV received=%u transferred=%d\\n", (unsigned)len, transferred);
+  if (transferred < 0 || len <= 44) {
+    audioStatus = "WAV DOWNLOAD FAILED";
+    return false;
+  }
+  uint8_t* reply = sink.data;
+  {
+      if (memcmp(reply, "RIFF", 4)==0 &&
           memcmp(reply+8, "WAVE", 4)==0) {
         size_t pos = 12, dataPos = 0, dataLen = 0;
         uint32_t rate = 24000;
@@ -261,9 +288,7 @@ bool playSumaneeWav(HTTPClient& http) {
           } else audioStatus = "SPEAKER FAILED";
         } else audioStatus = "BAD WAV FORMAT";
       } else audioStatus = "WAV DOWNLOAD FAILED";
-      heap_caps_free(reply);
-    } else audioStatus = "NO PSRAM FOR REPLY";
-  } else audioStatus = "BAD REPLY SIZE";
+  }
   return audioStatus == "TAP BOTTOM TO TALK";
 }
 
