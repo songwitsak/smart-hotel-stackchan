@@ -42,11 +42,25 @@ String sessionId;
 void maintainWiFi() {
   if (millis() - lastWiFiCheck < 10000 && lastWiFiCheck) return;
   lastWiFiCheck = millis();
-  wifiConnected = WiFi.status() == WL_CONNECTED;
-  if (!wifiConnected && strlen(WIFI_SSID) && strlen(WIFI_PASSWORD)) {
-    WiFi.mode(WIFI_STA);
-    WiFi.begin(WIFI_SSID, WIFI_PASSWORD);
+  wl_status_t status = WiFi.status();
+  wifiConnected = status == WL_CONNECTED;
+  if (wifiConnected) return;
+  static uint32_t lastAttempt = 0;
+  if (!strlen(WIFI_SSID)) {
+    gatewayStatus = "WIFI SSID MISSING";
+    return;
   }
+  if (!strlen(WIFI_PASSWORD)) {
+    gatewayStatus = "WIFI PASSWORD MISSING";
+    Serial.println("WiFi: password missing; set STACKCHAN_WIFI_PASSWORD in GitHub Actions secrets");
+    return;
+  }
+  if (lastAttempt && millis() - lastAttempt < 15000) return;
+  lastAttempt = millis();
+  Serial.printf("WiFi reconnect: SSID=%s status=%d\\n", WIFI_SSID, (int)status);
+  WiFi.disconnect();
+  WiFi.mode(WIFI_STA);
+  WiFi.begin(WIFI_SSID, WIFI_PASSWORD);
 }
 
 // Voice Stream currently accepts TEXT only (chatInput/sessionId).
@@ -290,7 +304,7 @@ void drawFace() {
   d.setTextDatum(top_center);
   d.setTextColor(muted, bg);
   d.setTextSize(1);
-  d.drawString(wifiConnected ? "SUMANEE / WIFI ONLINE" : "SUMANEE / WIFI OFFLINE", cx, 10, 2);
+  d.drawString(wifiConnected ? "SUMANEE / WIFI ONLINE" : (gatewayStatus == "WIFI PASSWORD MISSING" ? "WIFI PASSWORD MISSING" : "SUMANEE / WIFI OFFLINE"), cx, 10, 2);
 
   const int eyeY = cy - 20;
   const int gap = w / 6;
