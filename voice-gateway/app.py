@@ -20,27 +20,47 @@ DEVICE_TOKEN = os.environ.get("DEVICE_TOKEN", "")
 MAX_WAV_BYTES = 160_044
 
 def extract_text(payload: str) -> str:
-    """Handle plain responses, JSON responses and n8n SSE chunks."""
+    """Decode n8n streaming frames or a plain JSON/text response."""
+    def content_of(obj):
+        if isinstance(obj, str):
+            return obj
+        if isinstance(obj, list):
+            return "".join(content_of(v) for v in obj)
+        if isinstance(obj, dict):
+            for key in ("output", "text", "delta", "content", "message"):
+                if key in obj:
+                    value = content_of(obj[key])
+                    if value:
+                        return value
+        return ""
+
+    try:
+        whole = json.loads(payload)
+        answer = content_of(whole)
+        if answer:
+            return answer.strip()[:3500]
+    except json.JSONDecodeError:
+        pass
     pieces = []
+    saw_sse = False
     for line in payload.splitlines():
         line = line.strip()
         if line.startswith("data:"):
+            saw_sse = True
             line = line[5:].strip()
-        if not line or line == "[DONE]" or line.startswith(("event:", "id:", "retry:")):
+        elif line.startswith(("event:", "id:", "retry:")):
+            saw_sse = True
+            continue
+        if not line or line == "[DONE]":
             continue
         try:
-            data = json.loads(line)
+            obj = json.loads(line)
+            value = content_of(obj)
+            if value:
+                pieces.append(value)
         except json.JSONDecodeError:
-            pieces.append(line)
-            continue
-        if isinstance(data, str):
-            pieces.append(data)
-        elif isinstance(data, dict):
-            for key in ("output", "text", "content", "delta"):
-                value = data.get(key)
-                if isinstance(value, str):
-                    pieces.append(value)
-                    break
+            if not saw_sse:
+                pieces.append(line)
     return "".join(pieces).strip()[:3500]
 
 @app.get("/health")
