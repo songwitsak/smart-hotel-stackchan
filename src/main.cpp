@@ -204,15 +204,15 @@ void talkToSumanee() {
   }
   if (!ensureTlsClock()) { audioStatus = "TLS CLOCK NOT READY"; return; }
   audioBusy = true;
-  const size_t samples = 32000;  // 2 seconds, mono PCM16 at 16kHz
+  const size_t samples = 64000;  // 4 seconds, mono PCM16 at 16kHz
   int16_t* pcm = (int16_t*)heap_caps_malloc(samples * 2, MALLOC_CAP_SPIRAM | MALLOC_CAP_8BIT);
   if (!pcm) { audioStatus = "NO PSRAM FOR MIC"; audioBusy = false; return; }
-  audioStatus = "LISTENING (2 SEC)";
+  audioStatus = "LISTENING (4 SEC)";
   drawFace();
   M5.Speaker.end();
   size_t count = 0;
   if (M5.Mic.begin()) {
-    uint32_t deadline = millis() + 5500;
+    uint32_t deadline = millis() + 7500;
     while (count < samples && millis() < deadline) {
       if (M5.Mic.record(pcm + count, AUDIO_CHUNK, AUDIO_RATE)) count += AUDIO_CHUNK;
       delay(1);
@@ -223,6 +223,25 @@ void talkToSumanee() {
   if (count != samples) {
     audioStatus = "MIC RECORD FAILED";
     heap_caps_free(pcm); audioBusy = false; return;
+  }
+  // Avoid sending near-silent clips that often produce hallucinated transcripts.
+  // RMS is calculated over the captured PCM16 waveform (not the WAV header).
+  double energy = 0.0;
+  int peak = 0;
+  for (size_t i = 0; i < samples; ++i) {
+    const int32_t v = pcm[i];
+    energy += (double)v * v;
+    const int a = v < 0 ? -v : v;
+    if (a > peak) peak = a;
+  }
+  const float rms = sqrt(energy / samples);
+  Serial.printf("Mic capture RMS=%.1f peak=%d\\n", rms, peak);
+  if (rms < 100.0f && peak < 750) {
+    audioStatus = "NO VOICE DETECTED";
+    audioStatusUntil = millis() + 3500;
+    heap_caps_free(pcm);
+    audioBusy = false;
+    return;
   }
   size_t wavLen = 44 + samples * 2;
   uint8_t* wav = (uint8_t*)heap_caps_malloc(wavLen, MALLOC_CAP_SPIRAM | MALLOC_CAP_8BIT);
