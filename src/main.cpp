@@ -241,18 +241,25 @@ bool playSumaneeWav(HTTPClient& http) {
         size_t pos = 12, dataPos = 0, dataLen = 0;
         uint32_t rate = 24000;
         uint16_t channels = 0, bits = 0, format = 0;
-        while (pos + 8 <= (size_t)len) {
+        while (pos + 8 <= len) {
           uint32_t sz = getLE32(reply+pos+4);
-          if (sz > (size_t)len-pos-8) break;
+          const size_t remaining = len - pos - 8;
+          // Streaming WAV may use 0xFFFFFFFF as an unknown data length.
+          if (memcmp(reply+pos, "data", 4)==0) {
+            dataPos = pos + 8;
+            dataLen = (sz == 0xFFFFFFFFUL || sz > remaining) ? remaining : sz;
+            break;
+          }
+          if (sz > remaining) break;
           if (memcmp(reply+pos, "fmt ", 4)==0 && sz>=16) {
             format=getLE16(reply+pos+8); channels=getLE16(reply+pos+10);
             rate=getLE32(reply+pos+12); bits=getLE16(reply+pos+22);
           }
-          if (memcmp(reply+pos, "data", 4)==0) {
-            dataPos=pos+8; dataLen=sz; break;
-          }
           pos += 8 + sz + (sz & 1);
         }
+        Serial.printf("WAV format=%u channels=%u bits=%u rate=%lu data=%u total=%u\\n",
+          (unsigned)format, (unsigned)channels, (unsigned)bits,
+          (unsigned long)rate, (unsigned)dataLen, (unsigned)len);
         if (format==1 && channels==1 && bits==16 && dataLen>=2 &&
             rate>=8000 && rate<=48000) {
           audioStatus = "SPEAKING...";
