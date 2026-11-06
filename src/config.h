@@ -1,8 +1,12 @@
 #pragma once
 // Set up locally before compiling. Do not commit real credentials to GitHub.
 // This header is deliberately a template: no Wi-Fi password is assumed.
-#define WIFI_SSID ""
+#define WIFI_SSID "wti-ap-device"
+#if __has_include("wifi_secrets.h")
+#include "wifi_secrets.h"
+#else
 #define WIFI_PASSWORD ""
+#endif
 
 // Existing n8n workflow: Sumanee · Voice Stream.
 // Accepts JSON: {"chatInput":"...","sessionId":"cores3-..."}.
