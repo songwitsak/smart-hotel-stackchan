@@ -1,6 +1,10 @@
 #include <M5Unified.h>
 #include <ESP32Servo.h>
 #include <math.h>
+#include <WiFi.h>
+#include <WiFiClientSecure.h>
+#include <HTTPClient.h>
+#include "config.h"
 #include <esp_heap_caps.h>
 
 // M5Stack CoreS3 / StackChan Phase 1: face + IMU + optional head servo.
@@ -27,6 +31,63 @@ uint32_t lastMotion = 0;
 uint32_t lastFrame = 0;
 uint32_t lastInteraction = 0;
 bool wasTouched = false;
+bool wifiConnected = false;
+uint32_t lastWiFiCheck = 0;
+uint32_t lastGatewayCheck = 0;
+String gatewayStatus = "NOT TESTED";
+String voiceReply = "";
+bool gatewayBusy = false;
+String sessionId = "cores3-" + String((uint32_t)ESP.getEfuseMac(), HEX);
+
+void maintainWiFi() {
+  if (millis() - lastWiFiCheck < 10000 && lastWiFiCheck) return;
+  lastWiFiCheck = millis();
+  wifiConnected = WiFi.status() == WL_CONNECTED;
+  if (!wifiConnected && strlen(WIFI_SSID) && strlen(WIFI_PASSWORD)) {
+    WiFi.mode(WIFI_STA);
+    WiFi.begin(WIFI_SSID, WIFI_PASSWORD);
+  }
+}
+
+// Voice Stream currently accepts TEXT only (chatInput/sessionId).
+// This test sends a small message; it does not upload microphone audio.
+// Production endpoint is HTTPS, so TLS CA validation must be configured
+// before enabling live requests.
+void testGatewayText() {
+  if (gatewayBusy || WiFi.status() != WL_CONNECTED) {
+    gatewayStatus = "WIFI NOT CONNECTED";
+    return;
+  }
+  if (!strlen(VOICE_GATEWAY_CA_CERT)) {
+    gatewayStatus = "SET GATEWAY CA CERT";
+    return;
+  }
+  gatewayBusy = true;
+  gatewayStatus = "CONNECTING SUMANEE...";
+  drawFace();
+  WiFiClientSecure client;
+  client.setCACert(VOICE_GATEWAY_CA_CERT);
+  HTTPClient http;
+  if (!http.begin(client, SUMANEE_VOICE_URL)) {
+    gatewayStatus = "INVALID VOICE URL";
+  } else {
+    http.setTimeout(12000);
+    http.addHeader("Content-Type", "application/json");
+    String payload = "{\"sessionId\":\"" + sessionId +
+                     "\",\"chatInput\":\"สวัสดีสุมานี จาก StackChan\"}";
+    int code = http.POST(payload);
+    if (code == 200) {
+      gatewayStatus = "GATEWAY HTTP 200";
+      // Response may be streamed JSON/event frames rather than plain text.
+      // Keep raw response out of the constrained LCD and log only brief status.
+    } else {
+      gatewayStatus = "GATEWAY HTTP " + String(code);
+    }
+    http.end();
+  }
+  gatewayBusy = false;
+}
+
 static constexpr int AUDIO_RATE = 16000;
 static constexpr int AUDIO_CHUNK = 320;
 static constexpr int AUDIO_SAMPLES = 16000;
@@ -92,7 +153,7 @@ void drawFace() {
   d.setTextDatum(top_center);
   d.setTextColor(muted, bg);
   d.setTextSize(1);
-  d.drawString("SUMANEE  /  STACKCHAN", cx, 10, 2);
+  d.drawString(wifiConnected ? "SUMANEE / WIFI ONLINE" : "SUMANEE / WIFI OFFLINE", cx, 10, 2);
 
   const int eyeY = cy - 20;
   const int gap = w / 6;
@@ -132,6 +193,8 @@ void setup() {
   if (servoReady) headServo.write(headPosition);
 #endif
 
+  WiFi.mode(WIFI_STA);
+  if (strlen(WIFI_SSID) && strlen(WIFI_PASSWORD)) WiFi.begin(WIFI_SSID, WIFI_PASSWORD);
   lastInteraction = millis();
   drawFace();
   Serial.printf("CoreS3 ready; servo pin=%d, enabled=%d\n", STACKCHAN_SERVO_PIN, servoReady);
@@ -139,6 +202,7 @@ void setup() {
 
 void loop() {
   M5.update();
+  maintainWiFi();
   const uint32_t now = millis();
   float ax = 0, ay = 0, az = 0;
   if (M5.Imu.getAccel(&ax, &ay, &az)) {
