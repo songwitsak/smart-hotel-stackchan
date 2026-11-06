@@ -139,6 +139,134 @@ void testAudioLoopback() {
   audioBusy = false;
 }
 
+
+static void putLE16(uint8_t* p, uint16_t v) {
+  p[0] = v & 255; p[1] = (v >> 8) & 255;
+}
+static void putLE32(uint8_t* p, uint32_t v) {
+  for (int i=0; i<4; ++i) p[i] = (v >> (8*i)) & 255;
+}
+static uint16_t getLE16(const uint8_t* p) {
+  return uint16_t(p[0]) | (uint16_t(p[1]) << 8);
+}
+static uint32_t getLE32(const uint8_t* p) {
+  return uint32_t(p[0]) | (uint32_t(p[1])<<8) |
+         (uint32_t(p[2])<<16) | (uint32_t(p[3])<<24);
+}
+void talkToSumanee() {
+  if (audioBusy) return;
+  if (WiFi.status() != WL_CONNECTED) { audioStatus = "WIFI OFFLINE"; return; }
+  if (!strlen(STACKCHAN_VOICE_BRIDGE_URL) || !strlen(STACKCHAN_VOICE_TOKEN)) {
+    audioStatus = "VOICE BRIDGE NOT SET"; return;
+  }
+  if (!strlen(VOICE_GATEWAY_CA_CERT)) {
+    audioStatus = "VOICE TLS CA NOT SET"; return;
+  }
+  audioBusy = true;
+  const size_t samples = 32000;  // 2 seconds, mono PCM16 at 16kHz
+  int16_t* pcm = (int16_t*)heap_caps_malloc(samples * 2, MALLOC_CAP_SPIRAM | MALLOC_CAP_8BIT);
+  if (!pcm) { audioStatus = "NO PSRAM FOR MIC"; audioBusy = false; return; }
+  audioStatus = "SPEAK NOW (2 SEC)";
+  drawFace();
+  M5.Speaker.end();
+  size_t count = 0;
+  if (M5.Mic.begin()) {
+    uint32_t deadline = millis() + 5500;
+    while (count < samples && millis() < deadline) {
+      if (M5.Mic.record(pcm + count, AUDIO_CHUNK, AUDIO_RATE)) count += AUDIO_CHUNK;
+      delay(1);
+    }
+    while (M5.Mic.isRecording() && millis() < deadline + 1000) delay(1);
+    M5.Mic.end();
+  }
+  if (count != samples) {
+    audioStatus = "MIC RECORD FAILED";
+    heap_caps_free(pcm); audioBusy = false; return;
+  }
+  size_t wavLen = 44 + samples * 2;
+  uint8_t* wav = (uint8_t*)heap_caps_malloc(wavLen, MALLOC_CAP_SPIRAM | MALLOC_CAP_8BIT);
+  if (!wav) { audioStatus = "NO PSRAM FOR WAV"; heap_caps_free(pcm); audioBusy = false; return; }
+  memcpy(wav, "RIFF", 4); putLE32(wav+4, wavLen-8);
+  memcpy(wav+8, "WAVEfmt ", 8); putLE32(wav+16, 16);
+  putLE16(wav+20, 1); putLE16(wav+22, 1); putLE32(wav+24, AUDIO_RATE);
+  putLE32(wav+28, AUDIO_RATE*2); putLE16(wav+32, 2); putLE16(wav+34, 16);
+  memcpy(wav+36, "data", 4); putLE32(wav+40, samples*2);
+  memcpy(wav+44, pcm, samples*2);
+  heap_caps_free(pcm);
+  audioStatus = "ASKING SUMANEE...";
+  drawFace();
+  WiFiClientSecure client;
+  client.setCACert(VOICE_GATEWAY_CA_CERT);
+  HTTPClient http;
+  if (!http.begin(client, STACKCHAN_VOICE_BRIDGE_URL)) {
+    audioStatus = "BAD BRIDGE URL";
+  } else {
+    http.setTimeout(85000);
+    http.addHeader("Content-Type", "audio/wav");
+    http.addHeader("Authorization", String("Bearer ") + STACKCHAN_VOICE_TOKEN);
+    http.addHeader("X-Session-Id", sessionId);
+    int code = http.POST(wav, wavLen);
+    heap_caps_free(wav);
+    wav = nullptr;
+    if (code == 200) {
+      int len = http.getSize();
+      if (len > 44 && len <= 900000) {
+        uint8_t* reply = (uint8_t*)heap_caps_malloc(len, MALLOC_CAP_SPIRAM | MALLOC_CAP_8BIT);
+        if (reply) {
+          WiFiClient* stream = http.getStreamPtr();
+          int read = 0;
+          uint32_t deadline = millis() + 20000;
+          while (read < len && millis() < deadline) {
+            int avail = stream->available();
+            if (avail > 0) {
+              int n = stream->readBytes(reply + read, min(avail, len-read));
+              if (n > 0) read += n;
+            } else delay(2);
+          }
+          if (read == len && memcmp(reply, "RIFF", 4)==0 &&
+              memcmp(reply+8, "WAVE", 4)==0) {
+            size_t pos = 12, dataPos = 0, dataLen = 0;
+            uint32_t rate = 24000;
+            uint16_t channels = 0, bits = 0, format = 0;
+            while (pos + 8 <= (size_t)len) {
+              uint32_t sz = getLE32(reply+pos+4);
+              if (sz > (size_t)len-pos-8) break;
+              if (memcmp(reply+pos, "fmt ", 4)==0 && sz>=16) {
+                format=getLE16(reply+pos+8); channels=getLE16(reply+pos+10);
+                rate=getLE32(reply+pos+12); bits=getLE16(reply+pos+22);
+              }
+              if (memcmp(reply+pos, "data", 4)==0) {
+                dataPos=pos+8; dataLen=sz; break;
+              }
+              pos += 8 + sz + (sz & 1);
+            }
+            if (format==1 && channels==1 && bits==16 && dataLen>=2 &&
+                rate>=8000 && rate<=48000) {
+              audioStatus = "SUMANEE SPEAKING";
+              drawFace();
+              M5.Speaker.setVolume(90);
+              if (M5.Speaker.begin()) {
+                M5.Speaker.playRaw((const int16_t*)(reply+dataPos), dataLen/2, rate, false, 1, 0);
+                uint32_t end = millis()+30000;
+                while (M5.Speaker.isPlaying() && millis()<end) delay(10);
+                M5.Speaker.end();
+                audioStatus = "VOICE READY";
+              } else audioStatus = "SPEAKER FAILED";
+            } else audioStatus = "BAD WAV FORMAT";
+          } else audioStatus = "WAV DOWNLOAD FAILED";
+          heap_caps_free(reply);
+        } else audioStatus = "NO PSRAM FOR REPLY";
+      } else audioStatus = "BAD REPLY SIZE";
+    } else {
+      audioStatus = "VOICE HTTP " + String(code);
+      heap_caps_free(wav); wav = nullptr;
+    }
+    http.end();
+  }
+  if (wav) heap_caps_free(wav);
+  audioBusy = false;
+}
+
 void drawFace() {
   auto& d = M5.Display;
   const int w = d.width();
@@ -224,7 +352,8 @@ void loop() {
   // Touch screen wakes the face; touch again cycles head direction.
   const bool touched = M5.Touch.getCount() > 0;
   if (touched && !wasTouched && M5.Touch.getDetail(0).y > M5.Display.height() - 42) {
-    testAudioLoopback();
+    if (strlen(STACKCHAN_VOICE_BRIDGE_URL)) talkToSumanee();
+    else testAudioLoopback();
     awake = true;
     lastInteraction = millis();
   } else if (touched && !wasTouched) {
