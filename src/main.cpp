@@ -53,6 +53,7 @@ void maintainWiFi() {
 // This test sends a small message; it does not upload microphone audio.
 // Production endpoint is HTTPS, so TLS CA validation must be configured
 // before enabling live requests.
+void drawFace();
 void testGatewayText() {
   if (gatewayBusy || WiFi.status() != WL_CONNECTED) {
     gatewayStatus = "WIFI NOT CONNECTED";
