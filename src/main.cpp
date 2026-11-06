@@ -132,6 +132,7 @@ bool audioBusy = false;
 String audioStatus = "WELCOME - SUMANEE READY";
 static const char* WELCOME_SPEECH = "สวัสดีค่ะ สุมานีค่ะ ยินดีต้อนรับนะคะ ตอนนี้สุมานีพร้อมแล้ว มีอะไรให้ช่วยก็บอกได้เลยค่ะ";
 uint32_t welcomeShownAt = 0;
+bool welcomeSpeechAttempted = false;
 bool mouthSpeaking = false;
 uint8_t mouthLevel = 0;
 uint32_t audioStatusUntil = 0;
@@ -192,6 +193,107 @@ static uint32_t getLE32(const uint8_t* p) {
   return uint32_t(p[0]) | (uint32_t(p[1])<<8) |
          (uint32_t(p[2])<<16) | (uint32_t(p[3])<<24);
 }
+// Play mono PCM16 WAV received from n8n (voice replies and welcome message).
+bool playSumaneeWav(HTTPClient& http) {
+  int len = http.getSize();
+  if (len > 44 && len <= 1500000) {
+    uint8_t* reply = (uint8_t*)heap_caps_malloc(len, MALLOC_CAP_SPIRAM | MALLOC_CAP_8BIT);
+    if (reply) {
+      WiFiClient* stream = http.getStreamPtr();
+      int read = 0;
+      uint32_t deadline = millis() + 45000;
+      while (read < len && millis() < deadline) {
+        int avail = stream->available();
+        if (avail > 0) {
+          int n = stream->readBytes(reply + read, min(avail, len-read));
+          if (n > 0) read += n;
+        } else delay(2);
+      }
+      if (read == len && memcmp(reply, "RIFF", 4)==0 &&
+          memcmp(reply+8, "WAVE", 4)==0) {
+        size_t pos = 12, dataPos = 0, dataLen = 0;
+        uint32_t rate = 24000;
+        uint16_t channels = 0, bits = 0, format = 0;
+        while (pos + 8 <= (size_t)len) {
+          uint32_t sz = getLE32(reply+pos+4);
+          if (sz > (size_t)len-pos-8) break;
+          if (memcmp(reply+pos, "fmt ", 4)==0 && sz>=16) {
+            format=getLE16(reply+pos+8); channels=getLE16(reply+pos+10);
+            rate=getLE32(reply+pos+12); bits=getLE16(reply+pos+22);
+          }
+          if (memcmp(reply+pos, "data", 4)==0) {
+            dataPos=pos+8; dataLen=sz; break;
+          }
+          pos += 8 + sz + (sz & 1);
+        }
+        if (format==1 && channels==1 && bits==16 && dataLen>=2 &&
+            rate>=8000 && rate<=48000) {
+          audioStatus = "SPEAKING...";
+          drawFace();
+          M5.Speaker.setVolume(90);
+          if (M5.Speaker.begin()) {
+            M5.Speaker.playRaw((const int16_t*)(reply+dataPos), dataLen/2, rate, false, 1, 0);
+            uint32_t end = millis()+30000;
+            // Animate mouth using the amplitude envelope of the WAV samples.
+            mouthSpeaking = true;
+            const int16_t* voiceSamples = (const int16_t*)(reply + dataPos);
+            const size_t voiceCount = dataLen / 2;
+            const uint32_t started = millis();
+            while (M5.Speaker.isPlaying() && millis() < end) {
+              size_t sampleOffset = (size_t)((uint64_t)(millis() - started) * rate / 1000);
+              if (sampleOffset >= voiceCount) sampleOffset = voiceCount - 1;
+              size_t sampleEnd = sampleOffset + rate / 25; // 40 ms envelope
+              if (sampleEnd > voiceCount) sampleEnd = voiceCount;
+              uint32_t peak = 0;
+              for (size_t k = sampleOffset; k < sampleEnd; k += 16) {
+                int32_t v = voiceSamples[k];
+                uint32_t amplitude = (uint32_t)(v < 0 ? -v : v);
+                if (amplitude > peak) peak = amplitude;
+              }
+              mouthLevel = peak < 1100 ? 0 : (peak < 6500 ? 1 : 2);
+              drawFace();
+              delay(55);
+            }
+            mouthSpeaking = false;
+            mouthLevel = 0;
+            M5.Speaker.end();
+            audioStatus = "TAP BOTTOM TO TALK";
+          } else audioStatus = "SPEAKER FAILED";
+        } else audioStatus = "BAD WAV FORMAT";
+      } else audioStatus = "WAV DOWNLOAD FAILED";
+      heap_caps_free(reply);
+    } else audioStatus = "NO PSRAM FOR REPLY";
+  } else audioStatus = "BAD REPLY SIZE";
+  return audioStatus == "TAP BOTTOM TO TALK";
+}
+
+void playWelcomeSpeech() {
+  if (audioBusy || WiFi.status() != WL_CONNECTED) return;
+  if (!strlen(VOICE_GATEWAY_CA_CERT) || !ensureTlsClock()) {
+    audioStatus = "WELCOME TLS UNAVAILABLE";
+    return;
+  }
+  audioBusy = true;
+  audioStatus = "WELCOME SPEAKING...";
+  drawFace();
+  WiFiClientSecure client;
+  client.setCACert(VOICE_GATEWAY_CA_CERT);
+  HTTPClient http;
+  if (http.begin(client, "https://sumaneeplatform.witmorning.com/webhook/sumanee-cores3-welcome")) {
+    http.setTimeout(60000);
+    const int code = http.GET();
+    if (code == 200) {
+      playSumaneeWav(http);
+    } else {
+      audioStatus = "WELCOME HTTP " + String(code);
+    }
+    http.end();
+  } else {
+    audioStatus = "WELCOME URL FAILED";
+  }
+  audioBusy = false;
+}
+
 void talkToSumanee() {
   if (audioBusy) return;
   if (WiFi.status() != WL_CONNECTED) { audioStatus = "WIFI OFFLINE"; return; }
@@ -271,75 +373,7 @@ void talkToSumanee() {
     // Both the n8n webhook and the optional voice bridge now return PCM WAV.
     // Never call getString() on binary audio: it corrupts the response.
     if (code == 200) {
-      int len = http.getSize();
-      if (len > 44 && len <= 1500000) {
-        uint8_t* reply = (uint8_t*)heap_caps_malloc(len, MALLOC_CAP_SPIRAM | MALLOC_CAP_8BIT);
-        if (reply) {
-          WiFiClient* stream = http.getStreamPtr();
-          int read = 0;
-          uint32_t deadline = millis() + 45000;
-          while (read < len && millis() < deadline) {
-            int avail = stream->available();
-            if (avail > 0) {
-              int n = stream->readBytes(reply + read, min(avail, len-read));
-              if (n > 0) read += n;
-            } else delay(2);
-          }
-          if (read == len && memcmp(reply, "RIFF", 4)==0 &&
-              memcmp(reply+8, "WAVE", 4)==0) {
-            size_t pos = 12, dataPos = 0, dataLen = 0;
-            uint32_t rate = 24000;
-            uint16_t channels = 0, bits = 0, format = 0;
-            while (pos + 8 <= (size_t)len) {
-              uint32_t sz = getLE32(reply+pos+4);
-              if (sz > (size_t)len-pos-8) break;
-              if (memcmp(reply+pos, "fmt ", 4)==0 && sz>=16) {
-                format=getLE16(reply+pos+8); channels=getLE16(reply+pos+10);
-                rate=getLE32(reply+pos+12); bits=getLE16(reply+pos+22);
-              }
-              if (memcmp(reply+pos, "data", 4)==0) {
-                dataPos=pos+8; dataLen=sz; break;
-              }
-              pos += 8 + sz + (sz & 1);
-            }
-            if (format==1 && channels==1 && bits==16 && dataLen>=2 &&
-                rate>=8000 && rate<=48000) {
-              audioStatus = "SPEAKING...";
-              drawFace();
-              M5.Speaker.setVolume(90);
-              if (M5.Speaker.begin()) {
-                M5.Speaker.playRaw((const int16_t*)(reply+dataPos), dataLen/2, rate, false, 1, 0);
-                uint32_t end = millis()+30000;
-                // Animate mouth using the amplitude envelope of the WAV samples.
-                mouthSpeaking = true;
-                const int16_t* voiceSamples = (const int16_t*)(reply + dataPos);
-                const size_t voiceCount = dataLen / 2;
-                const uint32_t started = millis();
-                while (M5.Speaker.isPlaying() && millis() < end) {
-                  size_t sampleOffset = (size_t)((uint64_t)(millis() - started) * rate / 1000);
-                  if (sampleOffset >= voiceCount) sampleOffset = voiceCount - 1;
-                  size_t sampleEnd = sampleOffset + rate / 25; // 40 ms envelope
-                  if (sampleEnd > voiceCount) sampleEnd = voiceCount;
-                  uint32_t peak = 0;
-                  for (size_t k = sampleOffset; k < sampleEnd; k += 16) {
-                    int32_t v = voiceSamples[k];
-                    uint32_t amplitude = (uint32_t)(v < 0 ? -v : v);
-                    if (amplitude > peak) peak = amplitude;
-                  }
-                  mouthLevel = peak < 1100 ? 0 : (peak < 6500 ? 1 : 2);
-                  drawFace();
-                  delay(55);
-                }
-                mouthSpeaking = false;
-                mouthLevel = 0;
-                M5.Speaker.end();
-                audioStatus = "TAP BOTTOM TO TALK";
-              } else audioStatus = "SPEAKER FAILED";
-            } else audioStatus = "BAD WAV FORMAT";
-          } else audioStatus = "WAV DOWNLOAD FAILED";
-          heap_caps_free(reply);
-        } else audioStatus = "NO PSRAM FOR REPLY";
-      } else audioStatus = "BAD REPLY SIZE";
+      playSumaneeWav(http);
     } else {
       audioStatus = "VOICE HTTP " + String(code);
       heap_caps_free(wav); wav = nullptr;
@@ -468,6 +502,12 @@ void setup() {
 void loop() {
   M5.update();
   maintainWiFi();
+  // Speak the greeting once per boot after Wi-Fi becomes available.
+  // Do not block startup or prevent manual voice interaction.
+  if (!welcomeSpeechAttempted && WiFi.status() == WL_CONNECTED && !audioBusy) {
+    welcomeSpeechAttempted = true;
+    playWelcomeSpeech();
+  }
   const uint32_t now = millis();
   if (welcomeShownAt && now - welcomeShownAt >= 6000) {
     welcomeShownAt = 0;
