@@ -13,7 +13,7 @@ jobs:
         with:
           python-version: '3.11'
       - name: Install build tools
-        run: python -m pip install --upgrade platformio esptool
+        run: python -m pip install --upgrade platformio esptool certifi cryptography
       - name: Inject optional Wi-Fi password from GitHub Actions Secret
         env:
           STACKCHAN_WIFI_PASSWORD: ${{ secrets.STACKCHAN_WIFI_PASSWORD }}
@@ -27,6 +27,30 @@ jobs:
           Path("src/wifi_secrets.h").write_text(
               "#pragma once\n#define WIFI_PASSWORD " + json.dumps(password) + "\n"
           )
+          PY
+      - name: Generate trusted TLS CA bundle
+        run: |
+          python - <<'PY'
+          import certifi
+          from pathlib import Path
+          from cryptography import x509
+          from cryptography.x509.oid import NameOID
+          pem = Path(certifi.where()).read_bytes()
+          blocks = [b"-----BEGIN CERTIFICATE-----" + x.split(b"-----END CERTIFICATE-----")[0] + b"-----END CERTIFICATE-----\\n"
+                    for x in pem.split(b"-----BEGIN CERTIFICATE-----")[1:]]
+          roots = ("ISRG Root X1", "GTS Root R1", "GTS Root R4", "DigiCert Global Root G2",
+                   "GlobalSign Root CA - R3", "USERTrust RSA Certification Authority")
+          selected = []
+          for block in blocks:
+              cert = x509.load_pem_x509_certificate(block)
+              names = cert.subject.get_attributes_for_oid(NameOID.COMMON_NAME)
+              if names and names[0].value in roots:
+                  selected.append(block.decode("ascii"))
+          if len(selected) < 4:
+              raise SystemExit("Expected CA certificates missing from certifi")
+          content = "#pragma once\\n#define VOICE_GATEWAY_CA_CERT R\"SUMANEE_CA(\\n" + "".join(selected) + ")SUMANEE_CA\"\\n"
+          Path("src/voice_ca_bundle.h").write_text(content)
+          print("Embedded", len(selected), "trusted root certificates")
           PY
       - name: Build merged firmware
         run: |
