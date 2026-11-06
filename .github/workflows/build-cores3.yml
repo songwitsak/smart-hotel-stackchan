@@ -48,7 +48,7 @@ jobs:
                   selected.append(block.decode("ascii"))
           if len(selected) < 4:
               raise SystemExit("Expected CA certificates missing from certifi")
-          content = "#pragma once\\n#define VOICE_GATEWAY_CA_CERT R\"SUMANEE_CA(\\n" + "".join(selected) + ")SUMANEE_CA\"\\n"
+          content = "#pragma once\n#define VOICE_GATEWAY_CA_CERT R\"SUMANEE_CA(\n" + "".join(selected) + ")SUMANEE_CA\"\n"
           Path("src/voice_ca_bundle.h").write_text(content)
           print("Embedded", len(selected), "trusted root certificates")
           PY
