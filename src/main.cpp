@@ -37,7 +37,7 @@ uint32_t lastGatewayCheck = 0;
 String gatewayStatus = "NOT TESTED";
 String voiceReply = "";
 bool gatewayBusy = false;
-String sessionId = "cores3-" + String((uint32_t)ESP.getEfuseMac(), HEX);
+String sessionId;
 
 void maintainWiFi() {
   if (millis() - lastWiFiCheck < 10000 && lastWiFiCheck) return;
@@ -194,6 +194,7 @@ void setup() {
   if (servoReady) headServo.write(headPosition);
 #endif
 
+  sessionId = "cores3-" + String((uint32_t)ESP.getEfuseMac(), HEX);
   WiFi.mode(WIFI_STA);
   if (strlen(WIFI_SSID) && strlen(WIFI_PASSWORD)) WiFi.begin(WIFI_SSID, WIFI_PASSWORD);
   lastInteraction = millis();
