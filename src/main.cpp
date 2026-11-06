@@ -207,7 +207,7 @@ void talkToSumanee() {
   const size_t samples = 32000;  // 2 seconds, mono PCM16 at 16kHz
   int16_t* pcm = (int16_t*)heap_caps_malloc(samples * 2, MALLOC_CAP_SPIRAM | MALLOC_CAP_8BIT);
   if (!pcm) { audioStatus = "NO PSRAM FOR MIC"; audioBusy = false; return; }
-  audioStatus = "SPEAK NOW (2 SEC)";
+  audioStatus = "LISTENING (2 SEC)";
   drawFace();
   M5.Speaker.end();
   size_t count = 0;
@@ -234,7 +234,7 @@ void talkToSumanee() {
   memcpy(wav+36, "data", 4); putLE32(wav+40, samples*2);
   memcpy(wav+44, pcm, samples*2);
   heap_caps_free(pcm);
-  audioStatus = "ASKING SUMANEE...";
+  audioStatus = "THINKING...";
   drawFace();
   WiFiClientSecure client;
   client.setCACert(VOICE_GATEWAY_CA_CERT);
@@ -249,19 +249,16 @@ void talkToSumanee() {
     int code = http.POST(wav, wavLen);
     heap_caps_free(wav);
     wav = nullptr;
-    if (code == 200 && !useBridge) {
-      String answer = http.getString();
-      Serial.printf("Sumanee JSON reply: %.500s\\n", answer.c_str());
-      audioStatus = "SUMANEE TEXT RECEIVED";
-      voiceReply = answer.substring(0, 180);
-    } else if (code == 200) {
+    // Both the n8n webhook and the optional voice bridge now return PCM WAV.
+    // Never call getString() on binary audio: it corrupts the response.
+    if (code == 200) {
       int len = http.getSize();
-      if (len > 44 && len <= 900000) {
+      if (len > 44 && len <= 1500000) {
         uint8_t* reply = (uint8_t*)heap_caps_malloc(len, MALLOC_CAP_SPIRAM | MALLOC_CAP_8BIT);
         if (reply) {
           WiFiClient* stream = http.getStreamPtr();
           int read = 0;
-          uint32_t deadline = millis() + 20000;
+          uint32_t deadline = millis() + 45000;
           while (read < len && millis() < deadline) {
             int avail = stream->available();
             if (avail > 0) {
@@ -288,7 +285,7 @@ void talkToSumanee() {
             }
             if (format==1 && channels==1 && bits==16 && dataLen>=2 &&
                 rate>=8000 && rate<=48000) {
-              audioStatus = "SUMANEE SPEAKING";
+              audioStatus = "SPEAKING...";
               drawFace();
               M5.Speaker.setVolume(90);
               if (M5.Speaker.begin()) {
@@ -317,7 +314,7 @@ void talkToSumanee() {
                 mouthSpeaking = false;
                 mouthLevel = 0;
                 M5.Speaker.end();
-                audioStatus = "VOICE READY";
+                audioStatus = "TAP BOTTOM TO TALK";
               } else audioStatus = "SPEAKER FAILED";
             } else audioStatus = "BAD WAV FORMAT";
           } else audioStatus = "WAV DOWNLOAD FAILED";
