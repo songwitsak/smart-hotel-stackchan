@@ -344,68 +344,72 @@ void drawFace() {
   const uint32_t cyan = d.color565(83, 226, 232);
   const uint32_t white = d.color565(230, 245, 250);
   const uint32_t muted = d.color565(130, 153, 170);
+  const uint32_t footer = d.color565(24, 66, 78);
 
+  // Landscape 320x240: top header 24px, centered character, bottom status 64px.
+  d.startWrite();
   d.fillScreen(bg);
+  d.setTextDatum(top_center);
+  d.setTextSize(1);
+  d.setTextColor(muted, bg);
+  d.drawString(wifiConnected ? "SUMANEE  /  WIFI ONLINE" :
+               (gatewayStatus == "WIFI PASSWORD MISSING" ?
+                "WIFI PASSWORD MISSING" : "SUMANEE  /  WIFI OFFLINE"), cx, 5, 2);
+
 #if HAS_SUMANEE_PORTRAIT
-  // Center portrait at native pixel scale (120x120), enlarged 2x to 240x240.
-  // Crop vertically to leave a status bar while preserving image proportions.
-  const int scale = 2;
+  // Keep the entire 120x120 portrait visible in the landscape content area.
+  const int scale = 1;
   const int imageX = (w - PORTRAIT_W * scale) / 2;
-  const int imageY = -14;
+  const int imageY = 31 + (138 - PORTRAIT_H * scale) / 2;
   for (int py = 0; py < PORTRAIT_H; ++py) {
     for (int px = 0; px < PORTRAIT_W; ++px) {
       const int idx = py * PORTRAIT_W + px;
       const uint8_t packed = PORTRAIT_PIXELS[idx / 2];
       const uint8_t colorIdx = (idx & 1) ? (packed & 15) : (packed >> 4);
-      const int sy = imageY + py * scale;
-      if (sy >= 0 && sy + scale <= h) {
-        d.fillRect(imageX + px * scale, sy, scale, scale, PORTRAIT_PALETTE[colorIdx]);
-      }
+      d.fillRect(imageX + px * scale, imageY + py * scale,
+                 scale, scale, PORTRAIT_PALETTE[colorIdx]);
     }
   }
   if (mouthSpeaking) {
-    const int mx = cx, my = 130;
+    // Overlay position relative to portrait, not the full screen.
+    const int mx = imageX + (PORTRAIT_W * scale) / 2;
+    const int my = imageY + (PORTRAIT_H * scale * 3) / 4;
     const uint16_t dark = d.color565(10, 32, 59);
     const uint16_t lip = d.color565(109, 193, 222);
-    if (mouthLevel == 0) d.drawFastHLine(mx - 17, my, 34, lip);
-    else if (mouthLevel == 1) d.fillRoundRect(mx - 15, my - 3, 30, 10, 5, dark);
-    else d.fillRoundRect(mx - 17, my - 6, 34, 20, 9, dark);
+    if (mouthLevel == 0) d.drawFastHLine(mx - 9, my, 18, lip);
+    else if (mouthLevel == 1) d.fillRoundRect(mx - 9, my - 2, 18, 7, 3, dark);
+    else d.fillRoundRect(mx - 10, my - 4, 20, 12, 5, dark);
   }
 #else
-  // Fallback geometric face until portrait_asset.h is committed.
-#endif
-  d.setTextDatum(top_center);
-  d.setTextColor(muted, bg);
-  d.setTextSize(1);
-  d.drawString(wifiConnected ? "SUMANEE / WIFI ONLINE" : (gatewayStatus == "WIFI PASSWORD MISSING" ? "WIFI PASSWORD MISSING" : "SUMANEE / WIFI OFFLINE"), cx, 10, 2);
-
-  #if !HAS_SUMANEE_PORTRAIT
-  const int eyeY = cy - 20;
-  const int gap = w / 6;
+  const int eyeY = 91;
+  const int gap = 47;
   if (awake) {
     d.fillRoundRect(cx-gap-24, eyeY-18, 48, 36, 16, cyan);
     d.fillRoundRect(cx+gap-24, eyeY-18, 48, 36, 16, cyan);
     if (mouthSpeaking) {
-      if (mouthLevel == 0) d.drawFastHLine(cx-24, cy+34, 48, cyan);
-      else if (mouthLevel == 1) d.fillRoundRect(cx-20, cy+28, 40, 13, 6, cyan);
-      else d.fillRoundRect(cx-23, cy+22, 46, 27, 12, cyan);
+      if (mouthLevel == 0) d.drawFastHLine(cx-24, cy+23, 48, cyan);
+      else if (mouthLevel == 1) d.fillRoundRect(cx-20, cy+17, 40, 13, 6, cyan);
+      else d.fillRoundRect(cx-23, cy+11, 46, 27, 12, cyan);
     } else {
-      d.drawArc(cx, cy+34, 37, 29, 20, 160, cyan);
+      d.drawArc(cx, cy+23, 37, 29, 20, 160, cyan);
     }
   } else {
     d.fillRoundRect(cx-gap-24, eyeY-4, 48, 8, 4, cyan);
     d.fillRoundRect(cx+gap-24, eyeY-4, 48, 8, 4, cyan);
-    d.drawFastHLine(cx-24, cy+35, 48, cyan);
+    d.drawFastHLine(cx-24, cy+24, 48, cyan);
   }
+#endif
 
-  #endif
-  d.setTextColor(white, bg);
-  d.drawString(awake ? "AWAKE" : "IDLE", cx, h-47, 2);
-  d.setTextColor(muted, bg);
-  d.drawString(servoReady ? "HEAD SERVO READY" : "SERVO DISABLED - CHECK WIRING", cx, h-37, 1);
-  d.fillRoundRect(8, h-25, w-16, 23, 6, d.color565(24, 66, 78));
-  d.setTextColor(white, d.color565(24, 66, 78));
-  d.drawString(audioStatus, cx, h-20, 1);
+  // Bottom panel: text and interaction feedback remain clear of the portrait.
+  d.fillRoundRect(6, h - 65, w - 12, 61, 8, footer);
+  d.setTextColor(white, footer);
+  d.drawString(awake ? "AWAKE" : "IDLE", cx, h - 62, 2);
+  d.setTextColor(muted, footer);
+  d.drawString(servoReady ? "HEAD SERVO READY" :
+               "SERVO DISABLED - CHECK WIRING", cx, h - 43, 1);
+  d.setTextColor(white, footer);
+  d.drawString(audioStatus, cx, h - 24, 1);
+  d.endWrite();
 }
 
 void setup() {
