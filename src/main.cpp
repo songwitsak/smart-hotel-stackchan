@@ -94,7 +94,7 @@ static constexpr int AUDIO_CHUNK = 320;
 static constexpr int AUDIO_SAMPLES = 16000;
 int16_t* audioBuffer = nullptr;
 bool audioBusy = false;
-String audioStatus = "TAP BOTTOM TO TEST MIC";
+String audioStatus = "TAP BOTTOM TO TALK";
 uint32_t audioStatusUntil = 0;
 
 // Local audio loopback test. No network, speech recognition or cloud keys.
@@ -156,8 +156,9 @@ static uint32_t getLE32(const uint8_t* p) {
 void talkToSumanee() {
   if (audioBusy) return;
   if (WiFi.status() != WL_CONNECTED) { audioStatus = "WIFI OFFLINE"; return; }
-  if (!strlen(STACKCHAN_VOICE_BRIDGE_URL) || !strlen(STACKCHAN_VOICE_TOKEN)) {
-    audioStatus = "VOICE BRIDGE NOT SET"; return;
+  const bool useBridge = strlen(STACKCHAN_VOICE_BRIDGE_URL) > 0;
+  if (useBridge && !strlen(STACKCHAN_VOICE_TOKEN)) {
+    audioStatus = "BRIDGE TOKEN NOT SET"; return;
   }
   if (!strlen(VOICE_GATEWAY_CA_CERT)) {
     audioStatus = "VOICE TLS CA NOT SET"; return;
@@ -198,17 +199,22 @@ void talkToSumanee() {
   WiFiClientSecure client;
   client.setCACert(VOICE_GATEWAY_CA_CERT);
   HTTPClient http;
-  if (!http.begin(client, STACKCHAN_VOICE_BRIDGE_URL)) {
+  if (!http.begin(client, useBridge ? STACKCHAN_VOICE_BRIDGE_URL : SUMANEE_CORES3_WAV_URL)) {
     audioStatus = "BAD BRIDGE URL";
   } else {
     http.setTimeout(85000);
     http.addHeader("Content-Type", "audio/wav");
-    http.addHeader("Authorization", String("Bearer ") + STACKCHAN_VOICE_TOKEN);
+    if (useBridge) http.addHeader("Authorization", String("Bearer ") + STACKCHAN_VOICE_TOKEN);
     http.addHeader("X-Session-Id", sessionId);
     int code = http.POST(wav, wavLen);
     heap_caps_free(wav);
     wav = nullptr;
-    if (code == 200) {
+    if (code == 200 && !useBridge) {
+      String answer = http.getString();
+      Serial.printf("Sumanee JSON reply: %.500s\\n", answer.c_str());
+      audioStatus = "SUMANEE TEXT RECEIVED";
+      voiceReply = answer.substring(0, 180);
+    } else if (code == 200) {
       int len = http.getSize();
       if (len > 44 && len <= 900000) {
         uint8_t* reply = (uint8_t*)heap_caps_malloc(len, MALLOC_CAP_SPIRAM | MALLOC_CAP_8BIT);
@@ -352,8 +358,7 @@ void loop() {
   // Touch screen wakes the face; touch again cycles head direction.
   const bool touched = M5.Touch.getCount() > 0;
   if (touched && !wasTouched && M5.Touch.getDetail(0).y > M5.Display.height() - 42) {
-    if (strlen(STACKCHAN_VOICE_BRIDGE_URL)) talkToSumanee();
-    else testAudioLoopback();
+    talkToSumanee();
     awake = true;
     lastInteraction = millis();
   } else if (touched && !wasTouched) {
