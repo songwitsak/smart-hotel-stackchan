@@ -111,6 +111,8 @@ bool audioBusy = false;
 String audioStatus = "WELCOME - SUMANEE READY";
 static const char* WELCOME_SPEECH = "สวัสดีค่ะ สุมานีค่ะ ยินดีต้อนรับนะคะ ตอนนี้สุมานีพร้อมแล้ว มีอะไรให้ช่วยก็บอกได้เลยค่ะ";
 uint32_t welcomeShownAt = 0;
+bool mouthSpeaking = false;
+uint8_t mouthLevel = 0;
 uint32_t audioStatusUntil = 0;
 
 // Local audio loopback test. No network, speech recognition or cloud keys.
@@ -270,7 +272,28 @@ void talkToSumanee() {
               if (M5.Speaker.begin()) {
                 M5.Speaker.playRaw((const int16_t*)(reply+dataPos), dataLen/2, rate, false, 1, 0);
                 uint32_t end = millis()+30000;
-                while (M5.Speaker.isPlaying() && millis()<end) delay(10);
+                // Animate mouth using the amplitude envelope of the WAV samples.
+                mouthSpeaking = true;
+                const int16_t* voiceSamples = (const int16_t*)(reply + dataPos);
+                const size_t voiceCount = dataLen / 2;
+                const uint32_t started = millis();
+                while (M5.Speaker.isPlaying() && millis() < end) {
+                  size_t sampleOffset = (size_t)((uint64_t)(millis() - started) * rate / 1000);
+                  if (sampleOffset >= voiceCount) sampleOffset = voiceCount - 1;
+                  size_t sampleEnd = sampleOffset + rate / 25; // 40 ms envelope
+                  if (sampleEnd > voiceCount) sampleEnd = voiceCount;
+                  uint32_t peak = 0;
+                  for (size_t k = sampleOffset; k < sampleEnd; k += 16) {
+                    int32_t v = voiceSamples[k];
+                    uint32_t amplitude = (uint32_t)(v < 0 ? -v : v);
+                    if (amplitude > peak) peak = amplitude;
+                  }
+                  mouthLevel = peak < 1100 ? 0 : (peak < 6500 ? 1 : 2);
+                  drawFace();
+                  delay(55);
+                }
+                mouthSpeaking = false;
+                mouthLevel = 0;
                 M5.Speaker.end();
                 audioStatus = "VOICE READY";
               } else audioStatus = "SPEAKER FAILED";
@@ -311,7 +334,13 @@ void drawFace() {
   if (awake) {
     d.fillRoundRect(cx-gap-24, eyeY-18, 48, 36, 16, cyan);
     d.fillRoundRect(cx+gap-24, eyeY-18, 48, 36, 16, cyan);
-    d.drawArc(cx, cy+34, 37, 29, 20, 160, cyan);
+    if (mouthSpeaking) {
+      if (mouthLevel == 0) d.drawFastHLine(cx-24, cy+34, 48, cyan);
+      else if (mouthLevel == 1) d.fillRoundRect(cx-20, cy+28, 40, 13, 6, cyan);
+      else d.fillRoundRect(cx-23, cy+22, 46, 27, 12, cyan);
+    } else {
+      d.drawArc(cx, cy+34, 37, 29, 20, 160, cyan);
+    }
   } else {
     d.fillRoundRect(cx-gap-24, eyeY-4, 48, 8, 4, cyan);
     d.fillRoundRect(cx+gap-24, eyeY-4, 48, 8, 4, cyan);
