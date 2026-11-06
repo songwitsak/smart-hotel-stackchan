@@ -94,7 +94,9 @@ static constexpr int AUDIO_CHUNK = 320;
 static constexpr int AUDIO_SAMPLES = 16000;
 int16_t* audioBuffer = nullptr;
 bool audioBusy = false;
-String audioStatus = "TAP BOTTOM TO TALK";
+String audioStatus = "WELCOME - SUMANEE READY";
+static const char* WELCOME_SPEECH = u8"สวัสดีค่ะ สุมานีค่ะ ยินดีต้อนรับนะคะ ตอนนี้สุมานีพร้อมแล้ว มีอะไรให้ช่วยก็บอกได้เลยค่ะ";
+uint32_t welcomeShownAt = 0;
 uint32_t audioStatusUntil = 0;
 
 // Local audio loopback test. No network, speech recognition or cloud keys.
@@ -332,7 +334,10 @@ void setup() {
   WiFi.mode(WIFI_STA);
   if (strlen(WIFI_SSID) && strlen(WIFI_PASSWORD)) WiFi.begin(WIFI_SSID, WIFI_PASSWORD);
   lastInteraction = millis();
+  awake = true;
+  welcomeShownAt = millis();
   drawFace();
+  Serial.printf("Welcome speech: %s\\n", WELCOME_SPEECH);
   Serial.printf("CoreS3 ready; servo pin=%d, enabled=%d\n", STACKCHAN_SERVO_PIN, servoReady);
 }
 
@@ -340,6 +345,10 @@ void loop() {
   M5.update();
   maintainWiFi();
   const uint32_t now = millis();
+  if (welcomeShownAt && now - welcomeShownAt >= 6000) {
+    welcomeShownAt = 0;
+    audioStatus = "TAP BOTTOM TO TALK";
+  }
   float ax = 0, ay = 0, az = 0;
   if (M5.Imu.getAccel(&ax, &ay, &az)) {
     tiltDegrees = atan2f(ax, sqrtf(ay*ay + az*az)) * 180.0f / PI;
