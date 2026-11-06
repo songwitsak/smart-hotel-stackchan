@@ -333,6 +333,15 @@ void setup() {
   Serial.begin(115200);
   M5.Display.setRotation(1);
   M5.Imu.begin();
+  // Short startup chime; plays locally without Wi-Fi or cloud TTS.
+  M5.Speaker.setVolume(65);
+  if (M5.Speaker.begin()) {
+    M5.Speaker.tone(880, 110);
+    delay(145);
+    M5.Speaker.tone(1175, 160);
+    delay(200);
+    M5.Speaker.end();  // Release audio hardware for microphone capture.
+  }
   audioBuffer = (int16_t*)heap_caps_malloc(AUDIO_SAMPLES * sizeof(int16_t), MALLOC_CAP_8BIT);
   if (!audioBuffer) audioStatus = "AUDIO MEMORY FAILED";
 
