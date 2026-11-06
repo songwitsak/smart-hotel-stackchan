@@ -95,7 +95,7 @@ static constexpr int AUDIO_SAMPLES = 16000;
 int16_t* audioBuffer = nullptr;
 bool audioBusy = false;
 String audioStatus = "WELCOME - SUMANEE READY";
-static const char* WELCOME_SPEECH = u8"สวัสดีค่ะ สุมานีค่ะ ยินดีต้อนรับนะคะ ตอนนี้สุมานีพร้อมแล้ว มีอะไรให้ช่วยก็บอกได้เลยค่ะ";
+static const char* WELCOME_SPEECH = "สวัสดีค่ะ สุมานีค่ะ ยินดีต้อนรับนะคะ ตอนนี้สุมานีพร้อมแล้ว มีอะไรให้ช่วยก็บอกได้เลยค่ะ";
 uint32_t welcomeShownAt = 0;
 uint32_t audioStatusUntil = 0;
 
@@ -204,7 +204,7 @@ void talkToSumanee() {
   if (!http.begin(client, useBridge ? STACKCHAN_VOICE_BRIDGE_URL : SUMANEE_CORES3_WAV_URL)) {
     audioStatus = "BAD BRIDGE URL";
   } else {
-    http.setTimeout(85000);
+    http.setTimeout(60000);
     http.addHeader("Content-Type", "audio/wav");
     if (useBridge) http.addHeader("Authorization", String("Bearer ") + STACKCHAN_VOICE_TOKEN);
     http.addHeader("X-Session-Id", sessionId);
