@@ -1,0 +1,6 @@
+src/wifi_secrets.h
+src/voice_secrets.h
+voice-gateway/.env
+.pio/
+__pycache__/
+*.pyc
