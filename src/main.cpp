@@ -3,6 +3,7 @@
 #include <math.h>
 #include <WiFi.h>
 #include <WiFiClientSecure.h>
+#include <time.h>
 #include <HTTPClient.h>
 #include "config.h"
 #if __has_include("portrait_asset.h")
@@ -45,6 +46,19 @@ String voiceReply = "";
 bool gatewayBusy = false;
 String sessionId;
 
+bool ensureTlsClock() {
+  // TLS certificate validity checks require a real UTC clock.
+  if (time(nullptr) > 1700000000) return true;
+  configTime(0, 0, "pool.ntp.org", "time.google.com");
+  const uint32_t start = millis();
+  while (millis() - start < 12000) {
+    if (time(nullptr) > 1700000000) return true;
+    delay(200);
+  }
+  Serial.println("TLS: NTP synchronization failed");
+  return false;
+}
+
 void maintainWiFi() {
   if (millis() - lastWiFiCheck < 10000 && lastWiFiCheck) return;
   lastWiFiCheck = millis();
@@ -83,6 +97,7 @@ void testGatewayText() {
     gatewayStatus = "SET GATEWAY CA CERT";
     return;
   }
+  if (!ensureTlsClock()) { gatewayStatus = "TLS CLOCK NOT READY"; return; }
   gatewayBusy = true;
   gatewayStatus = "CONNECTING SUMANEE...";
   drawFace();
@@ -187,6 +202,7 @@ void talkToSumanee() {
   if (!strlen(VOICE_GATEWAY_CA_CERT)) {
     audioStatus = "VOICE TLS CA NOT SET"; return;
   }
+  if (!ensureTlsClock()) { audioStatus = "TLS CLOCK NOT READY"; return; }
   audioBusy = true;
   const size_t samples = 32000;  // 2 seconds, mono PCM16 at 16kHz
   int16_t* pcm = (int16_t*)heap_caps_malloc(samples * 2, MALLOC_CAP_SPIRAM | MALLOC_CAP_8BIT);
