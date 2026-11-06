@@ -25,7 +25,7 @@ jobs:
           if not password:
               raise SystemExit("Set repository Actions secret STACKCHAN_WIFI_PASSWORD before building")
           Path("src/wifi_secrets.h").write_text(
-              "#pragma once\\n#define WIFI_PASSWORD " + json.dumps(password) + "\\n"
+              "#pragma once\n#define WIFI_PASSWORD " + json.dumps(password) + "\n"
           )
           PY
       - name: Build merged firmware
