@@ -15,10 +15,14 @@
 // Currently responds with JSON text; WAV speech response is not enabled yet.
 #define SUMANEE_CORES3_WAV_URL "https://sumaneeplatform.witmorning.com/webhook/sumanee-cores3-wav"
 
-// Paste the PEM of the CA (or validated public trust chain) for HTTPS
-// requests. Never disable TLS verification in production.
+// GitHub Actions generates a Mozilla-derived CA bundle at build time.
+// Local builds can supply their own PEM using voice_ca_bundle.h.
+#if __has_include("voice_ca_bundle.h")
+#include "voice_ca_bundle.h"
+#else
 #ifndef VOICE_GATEWAY_CA_CERT
 #define VOICE_GATEWAY_CA_CERT ""
+#endif
 #endif
 
 // Optional legacy audio bridge. Leave empty to send WAV directly to n8n.
