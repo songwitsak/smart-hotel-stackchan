@@ -480,8 +480,20 @@ void loop() {
     else headServo.write(targetPosition);
   }
 
-  if (now - lastFrame >= 150) {
-    lastFrame = now;
+  // Avoid clearing and repainting the full LCD every 150 ms.
+  // Refresh only when the face or visible status changes.
+  static bool previousAwake = false;
+  static bool previousWifi = false;
+  static String previousAudioStatus;
+  static String previousGatewayStatus;
+  if (awake != previousAwake ||
+      wifiConnected != previousWifi ||
+      audioStatus != previousAudioStatus ||
+      gatewayStatus != previousGatewayStatus) {
+    previousAwake = awake;
+    previousWifi = wifiConnected;
+    previousAudioStatus = audioStatus;
+    previousGatewayStatus = gatewayStatus;
     drawFace();
   }
   delay(5);
