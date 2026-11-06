@@ -16,3 +16,12 @@
 // Paste the PEM of the CA (or validated public trust chain) for HTTPS
 // requests. Never disable TLS verification in production.
 #define VOICE_GATEWAY_CA_CERT ""
+
+// Separate CoreS3 audio bridge; deploy voice-gateway/ before enabling.
+// Set a HTTPS domain with a valid TLS certificate.
+#define STACKCHAN_VOICE_BRIDGE_URL ""
+#if __has_include("voice_secrets.h")
+#include "voice_secrets.h"
+#else
+#define STACKCHAN_VOICE_TOKEN ""
+#endif
