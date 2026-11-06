@@ -23,10 +23,11 @@ jobs:
           from pathlib import Path
           password = os.environ.get("STACKCHAN_WIFI_PASSWORD", "")
           if not password:
-              raise SystemExit("Set repository Actions secret STACKCHAN_WIFI_PASSWORD before building")
-          Path("src/wifi_secrets.h").write_text(
-              "#pragma once\n#define WIFI_PASSWORD " + json.dumps(password) + "\n"
-          )
+              print("::warning::STACKCHAN_WIFI_PASSWORD secret is not set; building with an empty Wi-Fi password")
+          else:
+              Path("src/wifi_secrets.h").write_text(
+                  "#pragma once\n#define WIFI_PASSWORD " + json.dumps(password) + "\n"
+              )
           PY
       - name: Build merged firmware
         run: bash build.sh
