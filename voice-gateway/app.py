@@ -26,7 +26,7 @@ def extract_text(payload: str) -> str:
         line = line.strip()
         if line.startswith("data:"):
             line = line[5:].strip()
-        if not line or line == "[DONE]":
+        if not line or line == "[DONE]" or line.startswith(("event:", "id:", "retry:")):
             continue
         try:
             data = json.loads(line)
@@ -90,7 +90,7 @@ async def voice(request: Request):
             raise HTTPException(502, "Sumanee did not return an AI response")
         # WAV output avoids MP3 decoding on the ESP32.
         tts = await client.audio.speech.create(
-            model="tts-1", voice="nova", input=answer[:3500],
+            model="tts-1", voice="nova", input=answer[:180],
             response_format="wav",
         )
         audio = tts.content
