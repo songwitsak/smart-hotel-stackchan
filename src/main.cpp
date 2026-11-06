@@ -133,6 +133,7 @@ String audioStatus = "WELCOME - SUMANEE READY";
 static const char* WELCOME_SPEECH = "สวัสดีค่ะ สุมานีค่ะ ยินดีต้อนรับนะคะ ตอนนี้สุมานีพร้อมแล้ว มีอะไรให้ช่วยก็บอกได้เลยค่ะ";
 uint32_t welcomeShownAt = 0;
 bool welcomeSpeechAttempted = false;
+bool welcomeMotionActive = false;
 bool mouthSpeaking = false;
 uint8_t mouthLevel = 0;
 uint32_t audioStatusUntil = 0;
@@ -285,6 +286,24 @@ bool playSumaneeWav(HTTPClient& http) {
                 if (amplitude > peak) peak = amplitude;
               }
               mouthLevel = peak < 1100 ? 0 : (peak < 6500 ? 1 : 2);
+              if (welcomeMotionActive && servoReady) {
+                // Gentle greeting: look left, right, then return to center.
+                const uint32_t elapsed = millis() - started;
+                const int range = STACKCHAN_SERVO_MAX_DEG - STACKCHAN_SERVO_MIN_DEG;
+                const int wave = (range < 20 ? range : 20) / 2;
+                const uint32_t phase = (elapsed / 550) % 4;
+                const int desired = phase == 0 ? 90 - wave :
+                                    phase == 1 ? 90 + wave :
+                                    phase == 2 ? 90 - wave : 90;
+                targetPosition = constrain(desired, STACKCHAN_SERVO_MIN_DEG, STACKCHAN_SERVO_MAX_DEG);
+                // Playback blocks loop(), so drive servo here as well.
+                if (millis() - lastMotion >= 35) {
+                  lastMotion = millis();
+                  if (headPosition < targetPosition) ++headPosition;
+                  else if (headPosition > targetPosition) --headPosition;
+                  headServo.write(headPosition);
+                }
+              }
               drawFace();
               delay(55);
             }
@@ -315,7 +334,10 @@ void playWelcomeSpeech() {
     http.setTimeout(60000);
     const int code = http.GET();
     if (code == 200) {
+      welcomeMotionActive = true;
       playSumaneeWav(http);
+      welcomeMotionActive = false;
+      targetPosition = 90;
     } else {
       audioStatus = "WELCOME HTTP " + String(code);
     }
